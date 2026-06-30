@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WIP Daily Delivery Control</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">WIP</div>
+          <div>
+            <h1>Daily Delivery Control</h1>
+            <p>แผนส่งงานรายวันและติดตามสถานะชิ้นงาน</p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <span id="connectionStatus" class="status-pill status-loading">กำลังโหลดข้อมูล</span>
+          <button id="refreshBtn" class="icon-btn" type="button" title="รีเฟรชข้อมูล" aria-label="รีเฟรชข้อมูล">↻</button>
+          <a class="source-link" href="https://docs.google.com/spreadsheets/d/1xhv4E6AGuHLXPpkzQjTT5FFIZjmP3wmcUAfuJ1eXKuk/edit?gid=1215588368#gid=1215588368" target="_blank" rel="noreferrer">เปิด Google Sheet</a>
+        </div>
+      </header>
+
+      <main class="main-grid">
+        <aside class="control-panel">
+          <label class="field">
+            <span>ค้นหา Part</span>
+            <input id="searchInput" type="search" placeholder="เช่น TM-755A-1" autocomplete="off" />
+          </label>
+
+          <div class="filter-group" aria-label="ตัวกรองสถานะ">
+            <button class="filter-btn active" type="button" data-filter="all">ทั้งหมด</button>
+            <button class="filter-btn" type="button" data-filter="risk">ขาด Safety</button>
+            <button class="filter-btn" type="button" data-filter="produce">ต้องผลิต</button>
+            <button class="filter-btn" type="button" data-filter="ready">พร้อมส่ง</button>
+          </div>
+
+          <label class="field">
+            <span>เรียงตาม</span>
+            <select id="sortSelect">
+              <option value="shortage">Safety gap มากสุด</option>
+              <option value="want">ยอดต้องผลิตมากสุด</option>
+              <option value="wip">WIP มากสุด</option>
+              <option value="part">Part Number</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Safety target</span>
+            <div class="stepper-row">
+              <input id="safetyRate" type="number" min="0" max="100" step="1" value="30" />
+              <span>%</span>
+            </div>
+          </label>
+
+          <label class="field">
+            <span>วันทำงานที่เหลือ</span>
+            <div class="range-row">
+              <input id="remainingDays" type="range" min="1" max="31" value="4" />
+              <output id="remainingDaysValue">4 วัน</output>
+            </div>
+          </label>
+
+          <div class="sheet-meta">
+            <div>
+              <span>ฐานข้อมูล</span>
+              <strong id="sheetTitle">WIP Production</strong>
+            </div>
+            <div>
+              <span>แท็บ</span>
+              <strong>automotive part</strong>
+            </div>
+            <div>
+              <span>อัปเดตในชีต</span>
+              <strong id="sheetUpdated">-</strong>
+            </div>
+          </div>
+
+          <button id="exportBtn" class="export-btn" type="button">Export Daily Plan CSV</button>
+        </aside>
+
+        <section class="dashboard">
+          <section id="kpiGrid" class="kpi-grid" aria-label="ภาพรวม"></section>
+
+          <section class="delivery-section">
+            <div class="section-heading">
+              <div>
+                <h2>แผนส่งงานรายวัน</h2>
+                <p id="deliveryMode">คำนวณจากยอดต้องผลิตและ Safety 30%</p>
+              </div>
+              <span id="visibleCount" class="count-pill">0 รายการ</span>
+            </div>
+            <div id="dayGrid" class="day-grid" aria-label="แผนรายวัน"></div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Part Number</th>
+                    <th>Safety Gap</th>
+                    <th>ต้องผลิต</th>
+                    <th>เป้าต่อวัน</th>
+                    <th>จุดค้างหลัก</th>
+                    <th>FG</th>
+                  </tr>
+                </thead>
+                <tbody id="planTable"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="parts-section">
+            <div class="section-heading">
+              <div>
+                <h2>Dashboard ชิ้นงานแต่ละชิ้น</h2>
+                <p>สถานะ FG, WIP, Safety และกระบวนการค้าง</p>
+              </div>
+            </div>
+            <div id="partsGrid" class="parts-grid"></div>
+            <div id="emptyState" class="empty-state" hidden>
+              ไม่พบชิ้นงานตามตัวกรองที่เลือก
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="./snapshot.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

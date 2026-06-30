@@ -167,7 +167,8 @@ h1 {
 }
 
 .source-link,
-.export-btn {
+.export-btn,
+.secondary-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -181,6 +182,12 @@ h1 {
   font-weight: 700;
 }
 
+.secondary-btn {
+  border-color: var(--line);
+  background: #fff;
+  color: var(--teal);
+}
+
 .main-grid {
   display: grid;
   grid-template-columns: minmax(250px, 300px) minmax(0, 1fr);
@@ -190,6 +197,7 @@ h1 {
 
 .control-panel,
 .delivery-section,
+.schedule-section,
 .parts-section,
 .kpi-card,
 .part-card {
@@ -330,6 +338,7 @@ a:focus-visible {
 }
 
 .delivery-section,
+.schedule-section,
 .parts-section {
   min-width: 0;
   max-width: 100%;
@@ -423,6 +432,115 @@ td {
 
 tbody tr:last-child td {
   border-bottom: 0;
+}
+
+.schedule-grid {
+  min-width: 0;
+}
+
+.schedule-table-wrap {
+  max-width: 100%;
+  max-height: 560px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.schedule-table {
+  min-width: 1900px;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.schedule-table th,
+.schedule-table td {
+  border-right: 1px solid #18211f;
+  border-bottom: 1px solid #18211f;
+  padding: 4px;
+  text-align: center;
+}
+
+.schedule-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  color: #9f1239;
+  font-size: 0.72rem;
+}
+
+.schedule-table thead tr:nth-child(2) th {
+  top: 35px;
+}
+
+.schedule-part {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  width: 170px;
+  min-width: 170px;
+  max-width: 170px;
+  background: #f8faf9;
+  color: var(--text);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.schedule-table thead .schedule-part {
+  z-index: 5;
+}
+
+.schedule-delivered-head,
+.schedule-delivered-cell {
+  background: #fff176;
+}
+
+.schedule-pending-head,
+.schedule-pending-cell {
+  background: #f7a1e6;
+}
+
+.schedule-total-head,
+.schedule-row-total {
+  background: #f8faf9;
+  font-weight: 800;
+}
+
+.schedule-month-head,
+.schedule-day-head,
+.schedule-day-cell {
+  background: #c8dbef;
+}
+
+.schedule-delivered-head,
+.schedule-pending-head,
+.schedule-total-head,
+.schedule-delivered-cell,
+.schedule-pending-cell,
+.schedule-row-total {
+  width: 96px;
+  min-width: 96px;
+}
+
+.schedule-day-head,
+.schedule-day-cell {
+  width: 46px;
+  min-width: 46px;
+}
+
+.schedule-input {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 4px 5px;
+  text-align: right;
+  font-size: 0.82rem;
+}
+
+.schedule-day-input {
+  font-size: 0.78rem;
 }
 
 .parts-grid {

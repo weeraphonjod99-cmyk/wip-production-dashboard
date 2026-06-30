@@ -3,6 +3,7 @@ const SHEET_GID = "1215588368";
 const SHEET_NAME = "automotive part";
 const SOURCE_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit?gid=${SHEET_GID}#gid=${SHEET_GID}`;
 const STORAGE_KEY = "wip-production-tracking-status";
+const SCHEDULE_KEY = "wip-production-daily-schedule";
 const AUTO_REFRESH_MS = 60000;
 
 const COL = {
@@ -145,6 +146,7 @@ const state = {
   lastCheckedAt: null,
   isLoading: false,
   tracking: loadTracking(),
+  schedule: loadSchedule(),
 };
 
 const els = {};
@@ -169,11 +171,13 @@ function bindElements() {
   els.kpiGrid = document.getElementById("kpiGrid");
   els.dayGrid = document.getElementById("dayGrid");
   els.planTable = document.getElementById("planTable");
+  els.scheduleGrid = document.getElementById("scheduleGrid");
   els.partsGrid = document.getElementById("partsGrid");
   els.emptyState = document.getElementById("emptyState");
   els.visibleCount = document.getElementById("visibleCount");
   els.deliveryMode = document.getElementById("deliveryMode");
   els.exportBtn = document.getElementById("exportBtn");
+  els.clearScheduleBtn = document.getElementById("clearScheduleBtn");
 }
 
 function bindEvents() {
@@ -207,6 +211,13 @@ function bindEvents() {
     if (!event.target.matches(".tracking-select")) return;
     state.tracking[event.target.dataset.part] = event.target.value;
     saveTracking();
+    render();
+  });
+  els.scheduleGrid.addEventListener("input", handleScheduleInput);
+  els.clearScheduleBtn.addEventListener("click", () => {
+    if (!confirm("Clear saved daily delivery plan?")) return;
+    state.schedule = {};
+    saveSchedule();
     render();
   });
   els.exportBtn.addEventListener("click", exportDailyPlan);
@@ -571,6 +582,7 @@ function render() {
   renderKpis(derived);
   renderDayGrid(derived);
   renderPlanTable(state.viewParts);
+  renderScheduleGrid(state.viewParts);
   renderParts(state.viewParts);
 }
 
@@ -631,10 +643,17 @@ function renderDayGrid(parts) {
     part.dailyPlan.forEach((day) => {
       dayTotals[day.day - 1] += Math.max(0, day.qty);
     });
+    const schedule = getSchedulePlan(part.partNumber);
+    Object.entries(schedule.days).forEach(([day, qty]) => {
+      const dayIndex = Number(day) - 1;
+      if (dayIndex >= 0 && dayIndex < 31) {
+        dayTotals[dayIndex] += Math.max(0, Number(qty) || 0);
+      }
+    });
   });
 
   const hasSheetPlan = dayTotals.some((qty) => qty > 0);
-  els.deliveryMode.textContent = hasSheetPlan ? "ใช้ตัวเลขจากคอลัมน์วันที่ 1-31 ในชีต" : "คำนวณจากยอดต้องผลิตและ Safety 30%";
+  els.deliveryMode.textContent = hasSheetPlan ? "รวมจากแผนในชีตและช่องกำหนดส่งรายวัน" : "คำนวณจากยอดต้องผลิตและ Safety 30%";
 
   const suggestionDaily = Math.ceil(sum(parts, "recommendedNeed") / Math.max(1, state.remainingDays));
   const todayLimit = state.remainingDays;
@@ -672,6 +691,120 @@ function renderPlanTable(parts) {
       `;
     });
   els.planTable.innerHTML = rows.join("") || `<tr><td colspan="6">ไม่มีรายการในมุมมองนี้</td></tr>`;
+}
+
+function renderScheduleGrid(parts) {
+  if (!els.scheduleGrid) return;
+
+  const dayHeaders = Array.from({ length: 31 }, (_, index) => `<th class="schedule-day-head">${index + 1}</th>`).join("");
+  const rows = parts
+    .map((part) => {
+      const plan = getSchedulePlan(part.partNumber);
+      const encodedPart = encodeURIComponent(part.partNumber);
+      const dayCells = Array.from({ length: 31 }, (_, index) => {
+        const day = index + 1;
+        const value = plan.days[day] || "";
+        return `
+          <td class="schedule-day-cell">
+            <input class="schedule-input schedule-day-input" type="number" min="0" step="1" inputmode="numeric"
+              data-part-key="${encodedPart}" data-field="day" data-day="${day}" value="${value}" aria-label="${escapeHtml(part.partNumber)} day ${day}" />
+          </td>
+        `;
+      }).join("");
+      return `
+        <tr data-part-key="${encodedPart}">
+          <th class="schedule-part" scope="row">${escapeHtml(part.partNumber)}</th>
+          <td class="schedule-delivered-cell">
+            <input class="schedule-input" type="number" min="0" step="1" inputmode="numeric"
+              data-part-key="${encodedPart}" data-field="delivered" value="${plan.delivered || ""}" aria-label="${escapeHtml(part.partNumber)} delivered" />
+          </td>
+          <td class="schedule-pending-cell">
+            <input class="schedule-input" type="number" min="0" step="1" inputmode="numeric"
+              data-part-key="${encodedPart}" data-field="pendingPacking" value="${plan.pendingPacking || ""}" aria-label="${escapeHtml(part.partNumber)} pending packing" />
+          </td>
+          <td class="schedule-row-total" data-total-for="${encodedPart}">${formatNumber(schedulePlanTotal(plan))}</td>
+          ${dayCells}
+        </tr>
+      `;
+    })
+    .join("");
+
+  els.scheduleGrid.innerHTML = `
+    <div class="schedule-table-wrap">
+      <table class="schedule-table">
+        <thead>
+          <tr>
+            <th class="schedule-part schedule-corner" rowspan="2">Part Number</th>
+            <th class="schedule-delivered-head" rowspan="2">Delivered</th>
+            <th class="schedule-pending-head" rowspan="2">Pending Packing</th>
+            <th class="schedule-total-head" rowspan="2">Plan Total</th>
+            <th class="schedule-month-head" colspan="31">Daily delivery plan</th>
+          </tr>
+          <tr>${dayHeaders}</tr>
+        </thead>
+        <tbody>${rows || `<tr><td colspan="35">ไม่มีรายการในมุมมองนี้</td></tr>`}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function handleScheduleInput(event) {
+  const input = event.target;
+  if (!input.matches(".schedule-input")) return;
+
+  const partNumber = decodeURIComponent(input.dataset.partKey);
+  const field = input.dataset.field;
+  const plan = getSchedulePlan(partNumber);
+  const value = Math.max(0, Math.round(toNumber(input.value)));
+
+  if (field === "day") {
+    const day = input.dataset.day;
+    if (value > 0) {
+      plan.days[day] = value;
+    } else {
+      delete plan.days[day];
+    }
+  } else {
+    plan[field] = value;
+  }
+
+  state.schedule[partNumber] = pruneSchedulePlan(plan);
+  saveSchedule();
+  updateScheduleRowTotal(partNumber);
+  renderDayGrid(state.viewParts);
+}
+
+function updateScheduleRowTotal(partNumber) {
+  const totalCell = els.scheduleGrid.querySelector(`[data-total-for="${cssEscape(encodeURIComponent(partNumber))}"]`);
+  if (totalCell) {
+    totalCell.textContent = formatNumber(schedulePlanTotal(getSchedulePlan(partNumber)));
+  }
+}
+
+function getSchedulePlan(partNumber) {
+  const saved = state.schedule[partNumber] || {};
+  return {
+    delivered: Number(saved.delivered) || 0,
+    pendingPacking: Number(saved.pendingPacking) || 0,
+    days: { ...(saved.days || {}) },
+  };
+}
+
+function pruneSchedulePlan(plan) {
+  const days = {};
+  Object.entries(plan.days || {}).forEach(([day, qty]) => {
+    const value = Number(qty) || 0;
+    if (value > 0) days[day] = value;
+  });
+  return {
+    delivered: Number(plan.delivered) || 0,
+    pendingPacking: Number(plan.pendingPacking) || 0,
+    days,
+  };
+}
+
+function schedulePlanTotal(plan) {
+  return Object.values(plan.days || {}).reduce((total, qty) => total + (Number(qty) || 0), 0);
 }
 
 function renderParts(parts) {
@@ -781,16 +914,25 @@ function statusMeta(status) {
 }
 
 function exportDailyPlan() {
-  const header = ["Part Number", "Safety Gap", "Want To Produce", "Daily Target", "Main WIP Status", "FG", "Safety Target"];
-  const rows = state.viewParts.map((part) => [
-    part.partNumber,
-    part.safetyGap,
-    part.needProduce,
-    part.dailyTarget,
-    part.topProcess ? `${part.topProcess.name} ${part.topProcess.qty}` : "",
-    part.fgPart,
-    part.safetyStock,
-  ]);
+  const dayHeaders = Array.from({ length: 31 }, (_, index) => `Day ${index + 1}`);
+  const header = ["Part Number", "Safety Gap", "Want To Produce", "Daily Target", "Main WIP Status", "FG", "Safety Target", "Delivered", "Pending Packing", "Plan Total", ...dayHeaders];
+  const rows = state.viewParts.map((part) => {
+    const plan = getSchedulePlan(part.partNumber);
+    const dayValues = Array.from({ length: 31 }, (_, index) => plan.days[index + 1] || "");
+    return [
+      part.partNumber,
+      part.safetyGap,
+      part.needProduce,
+      part.dailyTarget,
+      part.topProcess ? `${part.topProcess.name} ${part.topProcess.qty}` : "",
+      part.fgPart,
+      part.safetyStock,
+      plan.delivered || "",
+      plan.pendingPacking || "",
+      schedulePlanTotal(plan) || "",
+      ...dayValues,
+    ];
+  });
   const csv = [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
   const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -852,6 +994,11 @@ function escapeHtml(value) {
     .replace(/'/g, "&#039;");
 }
 
+function cssEscape(value) {
+  if (window.CSS?.escape) return CSS.escape(value);
+  return String(value).replace(/["\\]/g, "\\$&");
+}
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -870,4 +1017,16 @@ function loadTracking() {
 
 function saveTracking() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.tracking));
+}
+
+function loadSchedule() {
+  try {
+    return JSON.parse(localStorage.getItem(SCHEDULE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveSchedule() {
+  localStorage.setItem(SCHEDULE_KEY, JSON.stringify(state.schedule));
 }

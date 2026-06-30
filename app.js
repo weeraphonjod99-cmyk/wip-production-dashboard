@@ -174,6 +174,7 @@ function bindElements() {
   els.remainingDaysValue = document.getElementById("remainingDaysValue");
   els.sheetUpdated = document.getElementById("sheetUpdated");
   els.kpiGrid = document.getElementById("kpiGrid");
+  els.fgMonitor = document.getElementById("fgMonitor");
   els.dayGrid = document.getElementById("dayGrid");
   els.planTable = document.getElementById("planTable");
   els.scheduleGrid = document.getElementById("scheduleGrid");
@@ -616,6 +617,7 @@ function computeStatus(part) {
 function render() {
   const derived = updateDerivedState();
   renderKpis(derived);
+  renderFgMonitor(derived);
   renderDayGrid(derived);
   renderPlanTable(state.viewParts);
   renderScheduleGrid(state.viewParts);
@@ -633,6 +635,7 @@ function updateDerivedState() {
 function refreshComputedViews() {
   const derived = updateDerivedState();
   renderKpis(derived);
+  renderFgMonitor(derived);
   renderDayGrid(derived);
   renderPlanTable(state.viewParts);
   renderParts(state.viewParts);
@@ -687,6 +690,70 @@ function renderKpis(parts) {
       `,
     )
     .join("");
+}
+
+function renderFgMonitor(parts) {
+  if (!els.fgMonitor) return;
+
+  const monitorParts = [...parts].sort((a, b) => {
+    const aUrgency = fgUrgencyScore(a);
+    const bUrgency = fgUrgencyScore(b);
+    return bUrgency - aUrgency || a.fgPart - b.fgPart || b.safetyGap - a.safetyGap;
+  });
+  const maxAbsFg = Math.max(1, ...monitorParts.map((part) => Math.abs(part.fgPart)));
+  const urgentCount = monitorParts.filter((part) => part.fgPart < 0 || part.safetyGap > 0).length;
+  const negativeCount = monitorParts.filter((part) => part.fgPart < 0).length;
+  const lowFgCount = monitorParts.filter((part) => part.fgPart >= 0 && part.coverage < 0.5).length;
+
+  const rows = monitorParts
+    .map((part) => {
+      const status = fgMonitorStatus(part);
+      const width = clamp(Math.round((Math.abs(part.fgPart) / maxAbsFg) * 100), part.fgPart === 0 ? 0 : 4, 100);
+      return `
+        <div class="fg-row ${status.className}">
+          <div class="fg-row-main">
+            <strong title="${escapeHtml(part.partNumber)}">${escapeHtml(part.partNumber)}</strong>
+            <span>${status.label}</span>
+          </div>
+          <div class="fg-bar-track" aria-label="${escapeHtml(part.partNumber)} FG Balance ${formatNumber(part.fgPart)}">
+            <span class="fg-bar" style="width:${width}%"></span>
+          </div>
+          <div class="fg-row-values">
+            <span>FG <strong>${formatNumber(part.fgPart)}</strong></span>
+            <span>Gap <strong>${formatNumber(part.safetyGap)}</strong></span>
+            <span>${formatNumber(Math.round(part.coverage * 100))}%</span>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  els.fgMonitor.innerHTML = `
+    <div class="fg-monitor-summary">
+      <span>Part ${formatNumber(monitorParts.length)}</span>
+      <span>เร่งรีบ ${formatNumber(urgentCount)}</span>
+      <span>ติดลบ ${formatNumber(negativeCount)}</span>
+      <span>FG ต่ำ ${formatNumber(lowFgCount)}</span>
+    </div>
+    <div class="fg-chart">${rows || `<div class="empty-state">ไม่มีข้อมูล FG Balance</div>`}</div>
+  `;
+}
+
+function fgUrgencyScore(part) {
+  let score = 0;
+  if (part.fgPart < 0) score += 1000000 + Math.abs(part.fgPart);
+  if (part.safetyGap > 0) score += 500000 + part.safetyGap;
+  if (part.coverage < 0.25) score += 200000;
+  if (part.coverage < 0.5) score += 100000;
+  return score;
+}
+
+function fgMonitorStatus(part) {
+  if (part.fgPart < 0) return { label: "ติดลบ", className: "fg-negative" };
+  if (part.safetyGap > 0 && part.coverage < 0.5) return { label: "เร่งรีบ", className: "fg-critical" };
+  if (part.safetyGap > 0) return { label: "ขาด Safety", className: "fg-risk" };
+  if (part.coverage < 0.75) return { label: "FG ต่ำ", className: "fg-low" };
+  return { label: "เพียงพอ", className: "fg-ok" };
 }
 
 function renderDayGrid(parts) {

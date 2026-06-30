@@ -4,6 +4,7 @@ const SHEET_NAME = "automotive part";
 const SOURCE_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit?gid=${SHEET_GID}#gid=${SHEET_GID}`;
 const STORAGE_KEY = "wip-production-tracking-status";
 const SCHEDULE_KEY = "wip-production-daily-schedule";
+const ACTIVE_VIEW_KEY = "wip-production-active-view";
 const AUTO_REFRESH_MS = 60000;
 
 const COL = {
@@ -147,6 +148,7 @@ const state = {
   isLoading: false,
   tracking: loadTracking(),
   schedule: loadSchedule(),
+  activeView: loadActiveView(),
 };
 
 const els = {};
@@ -154,11 +156,14 @@ const els = {};
 document.addEventListener("DOMContentLoaded", () => {
   bindElements();
   bindEvents();
+  setActiveView(state.activeView, { persist: false });
   loadSheet({ useSnapshot: true, reason: "initial" });
   startAutoRefresh();
 });
 
 function bindElements() {
+  els.dashboard = document.querySelector(".dashboard");
+  els.viewTabs = document.querySelectorAll(".view-tab");
   els.connectionStatus = document.getElementById("connectionStatus");
   els.autoRefreshStatus = document.getElementById("autoRefreshStatus");
   els.refreshBtn = document.getElementById("refreshBtn");
@@ -181,6 +186,9 @@ function bindElements() {
 }
 
 function bindEvents() {
+  els.viewTabs.forEach((button) => {
+    button.addEventListener("click", () => setActiveView(button.dataset.view));
+  });
   els.refreshBtn.addEventListener("click", () => loadSheet({ reason: "manual" }));
   els.searchInput.addEventListener("input", (event) => {
     state.search = event.target.value.trim().toLowerCase();
@@ -221,6 +229,26 @@ function bindEvents() {
     render();
   });
   els.exportBtn.addEventListener("click", exportDailyPlan);
+}
+
+function setActiveView(view, options = {}) {
+  const nextView = view === "schedule" ? "schedule" : "dashboard";
+  state.activeView = nextView;
+  if (els.dashboard) {
+    els.dashboard.dataset.activeView = nextView;
+  }
+  els.viewTabs.forEach((button) => {
+    const isActive = button.dataset.view === nextView;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-selected", String(isActive));
+  });
+  if (options.persist !== false) {
+    try {
+      localStorage.setItem(ACTIVE_VIEW_KEY, nextView);
+    } catch {
+      // Ignore storage restrictions; the menu still works for the current session.
+    }
+  }
 }
 
 function startAutoRefresh() {
@@ -1029,4 +1057,12 @@ function loadSchedule() {
 
 function saveSchedule() {
   localStorage.setItem(SCHEDULE_KEY, JSON.stringify(state.schedule));
+}
+
+function loadActiveView() {
+  try {
+    return localStorage.getItem(ACTIVE_VIEW_KEY) === "schedule" ? "schedule" : "dashboard";
+  } catch {
+    return "dashboard";
+  }
 }

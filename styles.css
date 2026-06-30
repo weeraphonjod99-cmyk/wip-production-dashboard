@@ -311,6 +311,50 @@ a:focus-visible {
   gap: 18px;
 }
 
+.view-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  overflow-x: auto;
+}
+
+.view-tab {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.view-tab.active {
+  border-color: var(--teal);
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.dashboard [data-view-section] {
+  display: none;
+}
+
+.dashboard[data-active-view="dashboard"] [data-view-section="dashboard"],
+.dashboard[data-active-view="schedule"] [data-view-section="schedule"] {
+  display: block;
+}
+
+.dashboard[data-active-view="dashboard"] .kpi-grid[data-view-section="dashboard"] {
+  display: grid;
+}
+
 .kpi-grid {
   min-width: 0;
   display: grid;

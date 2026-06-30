@@ -82,10 +82,15 @@
           <button id="exportBtn" class="export-btn" type="button">Export Daily Plan CSV</button>
         </aside>
 
-        <section class="dashboard">
-          <section id="kpiGrid" class="kpi-grid" aria-label="ภาพรวม"></section>
+        <section class="dashboard" data-active-view="dashboard">
+          <nav class="view-tabs" aria-label="เมนูหลัก">
+            <button class="view-tab active" type="button" data-view="dashboard" aria-selected="true">Dashboard</button>
+            <button class="view-tab" type="button" data-view="schedule" aria-selected="false">กำหนดส่งรายวัน</button>
+          </nav>
 
-          <section class="delivery-section">
+          <section id="kpiGrid" class="kpi-grid" data-view-section="dashboard" aria-label="ภาพรวม"></section>
+
+          <section class="delivery-section" data-view-section="dashboard">
             <div class="section-heading">
               <div>
                 <h2>แผนส่งงานรายวัน</h2>
@@ -111,7 +116,7 @@
             </div>
           </section>
 
-          <section class="schedule-section">
+          <section class="schedule-section" data-view-section="schedule">
             <div class="section-heading">
               <div>
                 <h2>กำหนดการจัดส่งรายวันตามแผน</h2>
@@ -122,7 +127,7 @@
             <div id="scheduleGrid" class="schedule-grid" aria-label="กำหนดการจัดส่งรายวันตามแผน"></div>
           </section>
 
-          <section class="parts-section">
+          <section class="parts-section" data-view-section="dashboard">
             <div class="section-heading">
               <div>
                 <h2>Dashboard ชิ้นงานแต่ละชิ้น</h2>

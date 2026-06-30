@@ -528,7 +528,7 @@ a:focus-visible {
   border-color: var(--amber);
   border-left-color: var(--amber);
   background: #fde68a;
-  animation: blink-amber-cell 1.2s ease-in-out infinite;
+  animation: blink-amber-cell 2.4s ease-in-out infinite;
 }
 
 .fg-risk .fg-bar {

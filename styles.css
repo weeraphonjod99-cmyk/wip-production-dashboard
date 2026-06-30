@@ -492,7 +492,7 @@ tbody tr:last-child td {
 }
 
 .schedule-table {
-  min-width: 3040px;
+  min-width: 3200px;
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
@@ -556,6 +556,14 @@ tbody tr:last-child td {
   font-weight: 900;
 }
 
+.schedule-fg-head,
+.schedule-fg-cell {
+  background: #dcfce7;
+  color: #14532d;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
 .schedule-month-head,
 .schedule-day-head,
 .schedule-day-cell {
@@ -565,9 +573,11 @@ tbody tr:last-child td {
 .schedule-delivered-head,
 .schedule-pending-head,
 .schedule-total-head,
+.schedule-fg-head,
 .schedule-delivered-cell,
 .schedule-pending-cell,
-.schedule-row-total {
+.schedule-row-total,
+.schedule-fg-cell {
   width: 136px;
   min-width: 136px;
 }

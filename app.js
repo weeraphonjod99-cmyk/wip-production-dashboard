@@ -563,7 +563,12 @@ function findUpdatedStamp(rows) {
 function derivePart(part) {
   const forecastSafety = Math.round((part.forecasts.jul || 0) * (state.safetyRate / 100));
   const safetyStock = forecastSafety || part.sheetSafetyStock || 0;
-  const fgAfterDelivery = part.totalFgAfterDelivery || part.fgPart || 0;
+  const sourceFgPart = part.fgPart || 0;
+  const sourceFgAfterDelivery = part.totalFgAfterDelivery || sourceFgPart;
+  const schedule = getSchedulePlan(part.partNumber);
+  const manualDeliveryQty = scheduleDeliveryDeduction(schedule);
+  const fgPart = Math.max(0, sourceFgPart - manualDeliveryQty);
+  const fgAfterDelivery = Math.max(0, sourceFgAfterDelivery - manualDeliveryQty);
   const safetyGap = Math.max(0, safetyStock - fgAfterDelivery);
   const needProduce = Math.max(0, part.wantProduce);
   const recommendedNeed = Math.max(needProduce, safetyGap);
@@ -580,6 +585,12 @@ function derivePart(part) {
 
   return {
     ...part,
+    sourceFgPart,
+    sourceFgAfterDelivery,
+    manualDeliveryQty,
+    fgPart,
+    totalFgAfterDelivery: fgAfterDelivery,
+    fgAfterDelivery,
     safetyStock,
     safetyGap,
     needProduce,
@@ -603,14 +614,27 @@ function computeStatus(part) {
 }
 
 function render() {
-  const derived = state.allParts.map(derivePart);
-  state.viewParts = applyView(derived);
-  els.sheetUpdated.textContent = state.sheetUpdated;
-  els.visibleCount.textContent = `${formatNumber(state.viewParts.length)} รายการ`;
+  const derived = updateDerivedState();
   renderKpis(derived);
   renderDayGrid(derived);
   renderPlanTable(state.viewParts);
   renderScheduleGrid(state.viewParts);
+  renderParts(state.viewParts);
+}
+
+function updateDerivedState() {
+  const derived = state.allParts.map(derivePart);
+  state.viewParts = applyView(derived);
+  els.sheetUpdated.textContent = state.sheetUpdated;
+  els.visibleCount.textContent = `${formatNumber(state.viewParts.length)} รายการ`;
+  return derived;
+}
+
+function refreshComputedViews() {
+  const derived = updateDerivedState();
+  renderKpis(derived);
+  renderDayGrid(derived);
+  renderPlanTable(state.viewParts);
   renderParts(state.viewParts);
 }
 
@@ -751,6 +775,7 @@ function renderScheduleGrid(parts) {
               data-part-key="${encodedPart}" data-field="pendingPacking" value="${plan.pendingPacking || ""}" aria-label="${escapeHtml(part.partNumber)} pending packing" />
           </td>
           <td class="schedule-row-total" data-total-for="${encodedPart}">${formatNumber(schedulePlanTotal(plan))}</td>
+          <td class="schedule-fg-cell" data-fg-for="${encodedPart}">${formatNumber(part.fgPart)}</td>
           ${dayCells}
         </tr>
       `;
@@ -766,11 +791,12 @@ function renderScheduleGrid(parts) {
             <th class="schedule-delivered-head" rowspan="2">Delivered</th>
             <th class="schedule-pending-head" rowspan="2">Pending Packing</th>
             <th class="schedule-total-head" rowspan="2">Plan Total</th>
+            <th class="schedule-fg-head" rowspan="2">FG Balance</th>
             <th class="schedule-month-head" colspan="31">Daily delivery plan</th>
           </tr>
           <tr>${dayHeaders}</tr>
         </thead>
-        <tbody>${rows || `<tr><td colspan="35">ไม่มีรายการในมุมมองนี้</td></tr>`}</tbody>
+        <tbody>${rows || `<tr><td colspan="36">ไม่มีรายการในมุมมองนี้</td></tr>`}</tbody>
       </table>
     </div>
   `;
@@ -799,7 +825,8 @@ function handleScheduleInput(event) {
   state.schedule[partNumber] = pruneSchedulePlan(plan);
   saveSchedule();
   updateScheduleRowTotal(partNumber);
-  renderDayGrid(state.viewParts);
+  updateScheduleFgBalance(partNumber);
+  refreshComputedViews();
 }
 
 function updateScheduleRowTotal(partNumber) {
@@ -807,6 +834,13 @@ function updateScheduleRowTotal(partNumber) {
   if (totalCell) {
     totalCell.textContent = formatNumber(schedulePlanTotal(getSchedulePlan(partNumber)));
   }
+}
+
+function updateScheduleFgBalance(partNumber) {
+  const fgCell = els.scheduleGrid.querySelector(`[data-fg-for="${cssEscape(encodeURIComponent(partNumber))}"]`);
+  if (!fgCell) return;
+  const sourcePart = state.allParts.find((part) => part.partNumber === partNumber);
+  fgCell.textContent = sourcePart ? formatNumber(derivePart(sourcePart).fgPart) : "0";
 }
 
 function getSchedulePlan(partNumber) {
@@ -833,6 +867,10 @@ function pruneSchedulePlan(plan) {
 
 function schedulePlanTotal(plan) {
   return Object.values(plan.days || {}).reduce((total, qty) => total + (Number(qty) || 0), 0);
+}
+
+function scheduleDeliveryDeduction(plan) {
+  return (Number(plan.delivered) || 0) + schedulePlanTotal(plan);
 }
 
 function renderParts(parts) {
@@ -873,7 +911,7 @@ function renderPartCard(part) {
       <div class="metric-strip">
         ${metric("ต้องผลิต", part.needProduce)}
         ${metric("Safety 30%", part.safetyStock)}
-        ${metric("FG", part.fgPart)}
+        ${metric("FG Balance", part.fgPart)}
         ${metric("Safety Gap", part.safetyGap)}
       </div>
 
@@ -899,6 +937,8 @@ function renderPartCard(part) {
       </div>
 
       <div class="delivery-row">
+        ${part.manualDeliveryQty > 0 ? `<span class="chip">หัก FG ${formatNumber(part.manualDeliveryQty)}</span>` : ""}
+        ${part.manualDeliveryQty > 0 ? `<span class="chip">FG ไฟล์ ${formatNumber(part.sourceFgPart)}</span>` : ""}
         <span class="chip">ส่งแล้ว ${formatNumber(part.totalDelivery)}</span>
         <span class="chip">Order ${formatNumber(part.totalOrder)}</span>
         <span class="chip">Wait pack ${formatNumber(part.waitPacking)}</span>
@@ -943,7 +983,7 @@ function statusMeta(status) {
 
 function exportDailyPlan() {
   const dayHeaders = Array.from({ length: 31 }, (_, index) => `Day ${index + 1}`);
-  const header = ["Part Number", "Safety Gap", "Want To Produce", "Daily Target", "Main WIP Status", "FG", "Safety Target", "Delivered", "Pending Packing", "Plan Total", ...dayHeaders];
+  const header = ["Part Number", "Safety Gap", "Want To Produce", "Daily Target", "Main WIP Status", "FG Balance", "Source FG", "Manual Delivery Deducted", "Safety Target", "Delivered", "Pending Packing", "Plan Total", ...dayHeaders];
   const rows = state.viewParts.map((part) => {
     const plan = getSchedulePlan(part.partNumber);
     const dayValues = Array.from({ length: 31 }, (_, index) => plan.days[index + 1] || "");
@@ -954,6 +994,8 @@ function exportDailyPlan() {
       part.dailyTarget,
       part.topProcess ? `${part.topProcess.name} ${part.topProcess.qty}` : "",
       part.fgPart,
+      part.sourceFgPart,
+      part.manualDeliveryQty,
       part.safetyStock,
       plan.delivered || "",
       plan.pendingPacking || "",

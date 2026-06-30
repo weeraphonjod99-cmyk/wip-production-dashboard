@@ -111,6 +111,7 @@ h1 {
 }
 
 .status-pill,
+.sync-pill,
 .count-pill,
 .badge {
   display: inline-flex;
@@ -122,6 +123,11 @@ h1 {
   font-size: 0.82rem;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.sync-pill {
+  color: var(--muted);
+  background: #f1f5f3;
 }
 
 .status-loading,

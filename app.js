@@ -3,6 +3,7 @@ const SHEET_GID = "1215588368";
 const SHEET_NAME = "automotive part";
 const SOURCE_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit?gid=${SHEET_GID}#gid=${SHEET_GID}`;
 const STORAGE_KEY = "wip-production-tracking-status";
+const AUTO_REFRESH_MS = 60000;
 
 const COL = {
   part: 0,
@@ -140,6 +141,9 @@ const state = {
   remainingDays: 4,
   source: "loading",
   sheetUpdated: "-",
+  liveSignature: "",
+  lastCheckedAt: null,
+  isLoading: false,
   tracking: loadTracking(),
 };
 
@@ -148,11 +152,13 @@ const els = {};
 document.addEventListener("DOMContentLoaded", () => {
   bindElements();
   bindEvents();
-  loadSheet();
+  loadSheet({ useSnapshot: true, reason: "initial" });
+  startAutoRefresh();
 });
 
 function bindElements() {
   els.connectionStatus = document.getElementById("connectionStatus");
+  els.autoRefreshStatus = document.getElementById("autoRefreshStatus");
   els.refreshBtn = document.getElementById("refreshBtn");
   els.searchInput = document.getElementById("searchInput");
   els.sortSelect = document.getElementById("sortSelect");
@@ -171,7 +177,7 @@ function bindElements() {
 }
 
 function bindEvents() {
-  els.refreshBtn.addEventListener("click", loadSheet);
+  els.refreshBtn.addEventListener("click", () => loadSheet({ reason: "manual" }));
   els.searchInput.addEventListener("input", (event) => {
     state.search = event.target.value.trim().toLowerCase();
     render();
@@ -206,7 +212,72 @@ function bindEvents() {
   els.exportBtn.addEventListener("click", exportDailyPlan);
 }
 
-async function loadSheet() {
+function startAutoRefresh() {
+  window.setInterval(() => {
+    if (document.visibilityState !== "hidden") {
+      loadSheet({ reason: "auto" });
+    }
+  }, AUTO_REFRESH_MS);
+}
+
+async function loadSheet(options = {}) {
+  const { useSnapshot = false, reason = "manual" } = options;
+  if (state.isLoading) return;
+  state.isLoading = true;
+  let rendered = false;
+
+  try {
+    const snapshot = loadSnapshotParts();
+    if ((useSnapshot || !state.allParts.length) && snapshot.parts.length) {
+      state.allParts = snapshot.parts;
+      state.sheetUpdated = snapshot.updated || "Snapshot 27/06/2026";
+      state.source = "fallback";
+      setConnection("snapshot", "Snapshot data");
+      render();
+      rendered = true;
+    } else if (!state.allParts.length) {
+      state.allParts = FALLBACK_PARTS.map((part) => ({ ...part }));
+      state.sheetUpdated = "Fallback sample";
+      state.source = "fallback";
+      setConnection("snapshot", "Snapshot data");
+      render();
+      rendered = true;
+    }
+
+    setConnection("loading", reason === "auto" ? "Checking Google Sheet" : "Connecting Google Sheet");
+    const rows = await loadRowsWithJsonp();
+    const parsed = parseRows(rows);
+    if (!parsed.parts.length) throw new Error("No Part Number rows found");
+
+    const nextSignature = buildDataSignature(parsed);
+    const shouldRender = nextSignature !== state.liveSignature || state.source !== "live" || reason === "manual";
+    state.allParts = parsed.parts;
+    state.sheetUpdated = parsed.updated || "-";
+    state.liveSignature = nextSignature;
+    state.source = "live";
+    state.lastCheckedAt = new Date();
+    setConnection("live", "Live Google Sheet");
+
+    if (shouldRender) {
+      render();
+      rendered = true;
+    }
+  } catch (error) {
+    state.source = "fallback";
+    state.lastCheckedAt = new Date();
+    setConnection("snapshot", "Snapshot data");
+    console.warn("Google Sheet live load failed:", error);
+  } finally {
+    state.isLoading = false;
+    updateAutoRefreshStatus();
+  }
+
+  if (!rendered && !state.allParts.length) {
+    render();
+  }
+}
+
+async function loadSheetLegacy() {
   const snapshot = loadSnapshotParts();
   if (snapshot.parts.length) {
     state.allParts = snapshot.parts;
@@ -244,7 +315,8 @@ function loadRowsWithJsonp() {
     const callbackName = `wipSheetCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const query = encodeURIComponent("select *");
     const tqx = encodeURIComponent(`out:json;responseHandler:${callbackName}`);
-    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?gid=${SHEET_GID}&headers=0&tqx=${tqx}&tq=${query}`;
+    const cacheBust = Date.now();
+    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?gid=${SHEET_GID}&headers=0&tqx=${tqx}&tq=${query}&cacheBust=${cacheBust}`;
     const script = document.createElement("script");
     let settled = false;
 
@@ -286,6 +358,29 @@ function loadRowsWithJsonp() {
       reject(new Error("หมดเวลารอ Google Sheet"));
     }, 7000);
   });
+}
+
+function buildDataSignature(parsed) {
+  const summary = parsed.parts.map((part) => [
+    part.partNumber,
+    part.wantProduce,
+    part.sheetSafetyStock,
+    part.totalWorkpiece,
+    part.fgPart,
+    part.totalFgAfterDelivery,
+    part.waitPacking,
+    part.processes.map((process) => `${process.name}:${process.qty}`).join("|"),
+    part.dailyPlan.map((day) => `${day.day}:${day.qty}`).join("|"),
+  ]);
+  return JSON.stringify([parsed.updated, summary]);
+}
+
+function updateAutoRefreshStatus() {
+  if (!els.autoRefreshStatus) return;
+  const checkedAt = state.lastCheckedAt
+    ? state.lastCheckedAt.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })
+    : "-";
+  els.autoRefreshStatus.textContent = `Auto update 60s | checked ${checkedAt}`;
 }
 
 function loadSnapshotParts() {

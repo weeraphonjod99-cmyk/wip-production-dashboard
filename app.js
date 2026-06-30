@@ -5,7 +5,8 @@ const SOURCE_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/edit?gid=
 const STORAGE_KEY = "wip-production-tracking-status";
 const SCHEDULE_KEY = "wip-production-daily-schedule";
 const ACTIVE_VIEW_KEY = "wip-production-active-view";
-const AUTO_REFRESH_MS = 60000;
+const AUTO_REFRESH_MS = 15000;
+const AUTO_REFRESH_SECONDS = Math.round(AUTO_REFRESH_MS / 1000);
 
 const COL = {
   part: 0,
@@ -258,6 +259,14 @@ function startAutoRefresh() {
       loadSheet({ reason: "auto" });
     }
   }, AUTO_REFRESH_MS);
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      loadSheet({ reason: "auto" });
+    }
+  });
+
+  window.addEventListener("focus", () => loadSheet({ reason: "auto" }));
 }
 
 async function loadSheet(options = {}) {
@@ -420,7 +429,7 @@ function updateAutoRefreshStatus() {
   const checkedAt = state.lastCheckedAt
     ? state.lastCheckedAt.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })
     : "-";
-  els.autoRefreshStatus.textContent = `Auto update 60s | checked ${checkedAt}`;
+  els.autoRefreshStatus.textContent = `Auto update ${AUTO_REFRESH_SECONDS}s | checked ${checkedAt}`;
 }
 
 function loadSnapshotParts() {

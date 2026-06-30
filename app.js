@@ -567,8 +567,8 @@ function derivePart(part) {
   const sourceFgAfterDelivery = part.totalFgAfterDelivery || sourceFgPart;
   const schedule = getSchedulePlan(part.partNumber);
   const manualDeliveryQty = scheduleDeliveryDeduction(schedule);
-  const fgPart = Math.max(0, sourceFgPart - manualDeliveryQty);
-  const fgAfterDelivery = Math.max(0, sourceFgAfterDelivery - manualDeliveryQty);
+  const fgPart = sourceFgPart - manualDeliveryQty;
+  const fgAfterDelivery = sourceFgAfterDelivery - manualDeliveryQty;
   const safetyGap = Math.max(0, safetyStock - fgAfterDelivery);
   const needProduce = Math.max(0, part.wantProduce);
   const recommendedNeed = Math.max(needProduce, safetyGap);
@@ -775,7 +775,7 @@ function renderScheduleGrid(parts) {
               data-part-key="${encodedPart}" data-field="pendingPacking" value="${plan.pendingPacking || ""}" aria-label="${escapeHtml(part.partNumber)} pending packing" />
           </td>
           <td class="schedule-row-total" data-total-for="${encodedPart}">${formatNumber(schedulePlanTotal(plan))}</td>
-          <td class="schedule-fg-cell" data-fg-for="${encodedPart}">${formatNumber(part.fgPart)}</td>
+          <td class="schedule-fg-cell ${part.fgPart < 0 ? "is-negative" : ""}" data-fg-for="${encodedPart}">${formatNumber(part.fgPart)}</td>
           ${dayCells}
         </tr>
       `;
@@ -840,7 +840,9 @@ function updateScheduleFgBalance(partNumber) {
   const fgCell = els.scheduleGrid.querySelector(`[data-fg-for="${cssEscape(encodeURIComponent(partNumber))}"]`);
   if (!fgCell) return;
   const sourcePart = state.allParts.find((part) => part.partNumber === partNumber);
-  fgCell.textContent = sourcePart ? formatNumber(derivePart(sourcePart).fgPart) : "0";
+  const fgBalance = sourcePart ? derivePart(sourcePart).fgPart : 0;
+  fgCell.textContent = formatNumber(fgBalance);
+  fgCell.classList.toggle("is-negative", fgBalance < 0);
 }
 
 function getSchedulePlan(partNumber) {
@@ -949,10 +951,11 @@ function renderPartCard(part) {
 }
 
 function metric(label, value) {
+  const isNegative = Number(value) < 0;
   return `
     <div>
       <span class="metric-label">${label}</span>
-      <span class="metric-value">${formatNumber(value)}</span>
+      <span class="metric-value ${isNegative ? "is-negative" : ""}">${formatNumber(value)}</span>
     </div>
   `;
 }

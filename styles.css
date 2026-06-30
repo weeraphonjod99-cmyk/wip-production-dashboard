@@ -564,6 +564,11 @@ tbody tr:last-child td {
   font-weight: 900;
 }
 
+.schedule-fg-cell.is-negative {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .schedule-month-head,
 .schedule-day-head,
 .schedule-day-cell {
@@ -678,6 +683,10 @@ tbody tr:last-child td {
   margin-top: 2px;
   font-weight: 800;
   overflow-wrap: anywhere;
+}
+
+.metric-value.is-negative {
+  color: var(--red);
 }
 
 .coverage {

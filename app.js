@@ -7,6 +7,8 @@ const SCHEDULE_KEY = "wip-production-daily-schedule";
 const ACTIVE_VIEW_KEY = "wip-production-active-view";
 const AUTO_REFRESH_MS = 15000;
 const AUTO_REFRESH_SECONDS = Math.round(AUTO_REFRESH_MS / 1000);
+// Paste the deployed Apps Script web app URL here to share schedule edits across all users.
+const REMOTE_SCHEDULE_URL = "";
 
 const COL = {
   part: 0,
@@ -134,6 +136,8 @@ const FALLBACK_PARTS = [
   },
 ];
 
+const initialSchedule = loadSchedule();
+
 const state = {
   allParts: [],
   viewParts: [],
@@ -147,19 +151,23 @@ const state = {
   sheetUpdated: "-",
   liveSignature: "",
   lastCheckedAt: null,
+  lastScheduleSyncAt: null,
   isLoading: false,
+  isSyncingSchedule: false,
   tracking: loadTracking(),
-  schedule: loadSchedule(),
+  schedule: initialSchedule,
+  scheduleSignature: buildScheduleSignature(initialSchedule),
   activeView: loadActiveView(),
 };
 
 const els = {};
+let remoteScheduleSaveTimer = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   bindElements();
   bindEvents();
   setActiveView(state.activeView, { persist: false });
-  loadSheet({ useSnapshot: true, reason: "initial" });
+  refreshAll({ useSnapshot: true, reason: "initial" });
   startAutoRefresh();
 });
 
@@ -193,7 +201,7 @@ function bindEvents() {
   els.viewTabs.forEach((button) => {
     button.addEventListener("click", () => setActiveView(button.dataset.view));
   });
-  els.refreshBtn.addEventListener("click", () => loadSheet({ reason: "manual" }));
+  els.refreshBtn.addEventListener("click", () => refreshAll({ reason: "manual" }));
   els.searchInput.addEventListener("input", (event) => {
     state.search = event.target.value;
     render();
@@ -263,17 +271,22 @@ function setActiveView(view, options = {}) {
 function startAutoRefresh() {
   window.setInterval(() => {
     if (document.visibilityState !== "hidden") {
-      loadSheet({ reason: "auto" });
+      refreshAll({ reason: "auto" });
     }
   }, AUTO_REFRESH_MS);
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
-      loadSheet({ reason: "auto" });
+      refreshAll({ reason: "auto" });
     }
   });
 
-  window.addEventListener("focus", () => loadSheet({ reason: "auto" }));
+  window.addEventListener("focus", () => refreshAll({ reason: "auto" }));
+}
+
+function refreshAll(options = {}) {
+  loadSheet(options);
+  syncRemoteSchedule(options);
 }
 
 async function loadSheet(options = {}) {
@@ -416,6 +429,131 @@ function loadRowsWithJsonp() {
   });
 }
 
+function hasRemoteScheduleSync() {
+  return /^https?:\/\//i.test(REMOTE_SCHEDULE_URL.trim());
+}
+
+async function syncRemoteSchedule() {
+  if (!hasRemoteScheduleSync() || state.isSyncingSchedule) return;
+  state.isSyncingSchedule = true;
+
+  try {
+    const response = await loadRemoteScheduleWithJsonp();
+    const remoteSchedule = normalizeRemoteSchedule(response.schedule || {});
+    const remoteSignature = buildScheduleSignature(remoteSchedule);
+    const localSignature = buildScheduleSignature(state.schedule);
+    const remoteIsEmpty = Object.keys(remoteSchedule).length === 0;
+    const localHasData = Object.keys(state.schedule).length > 0;
+
+    state.lastScheduleSyncAt = new Date();
+
+    if (!response.updatedAt && remoteIsEmpty && localHasData) {
+      queueRemoteScheduleSave();
+      return;
+    }
+
+    if (remoteSignature !== localSignature) {
+      state.schedule = remoteSchedule;
+      state.scheduleSignature = remoteSignature;
+      saveScheduleLocal();
+      render();
+    }
+  } catch (error) {
+    console.warn("Remote schedule sync failed:", error);
+  } finally {
+    state.isSyncingSchedule = false;
+    updateAutoRefreshStatus();
+  }
+}
+
+function loadRemoteScheduleWithJsonp() {
+  return new Promise((resolve, reject) => {
+    const callbackName = `wipScheduleCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const separator = REMOTE_SCHEDULE_URL.includes("?") ? "&" : "?";
+    const url = `${REMOTE_SCHEDULE_URL}${separator}action=get&callback=${callbackName}&cacheBust=${Date.now()}`;
+    const script = document.createElement("script");
+    let settled = false;
+
+    const cleanup = () => {
+      settled = true;
+      delete window[callbackName];
+      script.remove();
+    };
+
+    window[callbackName] = (response) => {
+      if (settled) return;
+      cleanup();
+      if (!response || response.ok === false) {
+        reject(new Error(response?.error || "Remote schedule response error"));
+        return;
+      }
+      resolve(response);
+    };
+
+    script.onerror = () => {
+      if (settled) return;
+      cleanup();
+      reject(new Error("Remote schedule load failed"));
+    };
+    script.src = url;
+    document.head.appendChild(script);
+    window.setTimeout(() => {
+      if (settled) return;
+      cleanup();
+      reject(new Error("Remote schedule load timeout"));
+    }, 7000);
+  });
+}
+
+function queueRemoteScheduleSave() {
+  if (!hasRemoteScheduleSync()) return;
+  window.clearTimeout(remoteScheduleSaveTimer);
+  remoteScheduleSaveTimer = window.setTimeout(pushRemoteSchedule, 600);
+}
+
+async function pushRemoteSchedule() {
+  if (!hasRemoteScheduleSync()) return;
+  const payload = {
+    action: "set",
+    schedule: normalizeRemoteSchedule(state.schedule),
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    await fetch(REMOTE_SCHEDULE_URL, {
+      method: "POST",
+      mode: "no-cors",
+      body: JSON.stringify(payload),
+    });
+    state.lastScheduleSyncAt = new Date();
+    updateAutoRefreshStatus();
+  } catch (error) {
+    console.warn("Remote schedule save failed:", error);
+  }
+}
+
+function normalizeRemoteSchedule(rawSchedule) {
+  const normalized = {};
+  Object.entries(rawSchedule || {}).forEach(([partNumber, plan]) => {
+    const nextPlan = pruneSchedulePlan({
+      delivered: toNumber(plan?.delivered),
+      pendingPacking: toNumber(plan?.pendingPacking),
+      days: Object.entries(plan?.days || {}).reduce((days, [day, value]) => {
+        const dayNumber = Number(day);
+        const qty = Math.max(0, Math.round(toNumber(value)));
+        if (dayNumber >= 1 && dayNumber <= 31 && qty > 0) {
+          days[String(dayNumber)] = qty;
+        }
+        return days;
+      }, {}),
+    });
+    if (nextPlan.delivered || nextPlan.pendingPacking || Object.keys(nextPlan.days).length) {
+      normalized[partNumber] = nextPlan;
+    }
+  });
+  return normalized;
+}
+
 function buildDataSignature(parsed) {
   const summary = parsed.parts.map((part) => [
     part.partNumber,
@@ -431,12 +569,26 @@ function buildDataSignature(parsed) {
   return JSON.stringify([parsed.updated, summary]);
 }
 
+function buildScheduleSignature(schedule) {
+  const summary = Object.keys(schedule || {})
+    .sort()
+    .map((partNumber) => {
+      const plan = schedule[partNumber] || {};
+      const days = Object.keys(plan.days || {})
+        .sort((a, b) => Number(a) - Number(b))
+        .map((day) => [day, Number(plan.days[day]) || 0]);
+      return [partNumber, Number(plan.delivered) || 0, Number(plan.pendingPacking) || 0, days];
+    });
+  return JSON.stringify(summary);
+}
+
 function updateAutoRefreshStatus() {
   if (!els.autoRefreshStatus) return;
   const checkedAt = state.lastCheckedAt
     ? state.lastCheckedAt.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })
     : "-";
-  els.autoRefreshStatus.textContent = `Auto update ${AUTO_REFRESH_SECONDS}s | checked ${checkedAt}`;
+  const scheduleSync = hasRemoteScheduleSync() ? "shared plan sync" : "local plan only";
+  els.autoRefreshStatus.textContent = `Auto update ${AUTO_REFRESH_SECONDS}s | checked ${checkedAt} | ${scheduleSync}`;
 }
 
 function loadSnapshotParts() {
@@ -1220,14 +1372,21 @@ function saveTracking() {
 
 function loadSchedule() {
   try {
-    return JSON.parse(localStorage.getItem(SCHEDULE_KEY) || "{}");
+    return normalizeRemoteSchedule(JSON.parse(localStorage.getItem(SCHEDULE_KEY) || "{}"));
   } catch {
     return {};
   }
 }
 
-function saveSchedule() {
+function saveScheduleLocal() {
   localStorage.setItem(SCHEDULE_KEY, JSON.stringify(state.schedule));
+}
+
+function saveSchedule() {
+  state.schedule = normalizeRemoteSchedule(state.schedule);
+  state.scheduleSignature = buildScheduleSignature(state.schedule);
+  saveScheduleLocal();
+  queueRemoteScheduleSave();
 }
 
 function loadActiveView() {

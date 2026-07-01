@@ -139,6 +139,7 @@ const state = {
   viewParts: [],
   filter: "all",
   search: "",
+  selectedPart: "all",
   sort: "shortage",
   safetyRate: 30,
   remainingDays: 4,
@@ -169,6 +170,7 @@ function bindElements() {
   els.autoRefreshStatus = document.getElementById("autoRefreshStatus");
   els.refreshBtn = document.getElementById("refreshBtn");
   els.searchInput = document.getElementById("searchInput");
+  els.partSelect = document.getElementById("partSelect");
   els.sortSelect = document.getElementById("sortSelect");
   els.safetyRate = document.getElementById("safetyRate");
   els.remainingDays = document.getElementById("remainingDays");
@@ -194,6 +196,10 @@ function bindEvents() {
   els.refreshBtn.addEventListener("click", () => loadSheet({ reason: "manual" }));
   els.searchInput.addEventListener("input", (event) => {
     state.search = event.target.value.trim().toLowerCase();
+    render();
+  });
+  els.partSelect.addEventListener("change", (event) => {
+    state.selectedPart = event.target.value || "all";
     render();
   });
   els.sortSelect.addEventListener("change", (event) => {
@@ -624,10 +630,10 @@ function computeStatus(part) {
 }
 
 function render() {
-  const derived = updateDerivedState();
-  renderKpis(derived);
-  renderFgMonitor(derived);
-  renderDayGrid(derived);
+  updateDerivedState();
+  renderKpis(state.viewParts);
+  renderFgMonitor(state.viewParts);
+  renderDayGrid(state.viewParts);
   renderPlanTable(state.viewParts);
   renderScheduleGrid(state.viewParts);
   renderParts(state.viewParts);
@@ -635,6 +641,7 @@ function render() {
 
 function updateDerivedState() {
   const derived = state.allParts.map(derivePart);
+  renderPartSelect(derived);
   state.viewParts = applyView(derived);
   els.sheetUpdated.textContent = state.sheetUpdated;
   els.visibleCount.textContent = `${formatNumber(state.viewParts.length)} รายการ`;
@@ -642,17 +649,19 @@ function updateDerivedState() {
 }
 
 function refreshComputedViews() {
-  const derived = updateDerivedState();
-  renderKpis(derived);
-  renderFgMonitor(derived);
-  renderDayGrid(derived);
+  updateDerivedState();
+  renderKpis(state.viewParts);
+  renderFgMonitor(state.viewParts);
+  renderDayGrid(state.viewParts);
   renderPlanTable(state.viewParts);
   renderParts(state.viewParts);
 }
 
 function applyView(parts) {
   const query = state.search;
+  const selectedPart = state.selectedPart;
   let result = parts.filter((part) => {
+    if (selectedPart !== "all" && part.partNumber !== selectedPart) return false;
     const matchesSearch = !query || part.partNumber.toLowerCase().includes(query) || part.processes.some((process) => process.name.toLowerCase().includes(query));
     if (!matchesSearch) return false;
     if (state.filter === "risk") return part.safetyGap > 0;
@@ -669,6 +678,21 @@ function applyView(parts) {
   });
 
   return result;
+}
+
+function renderPartSelect(parts) {
+  if (!els.partSelect) return;
+  const sortedParts = [...parts].sort((a, b) => a.partNumber.localeCompare(b.partNumber, "th"));
+  const hasSelectedPart = state.selectedPart === "all" || sortedParts.some((part) => part.partNumber === state.selectedPart);
+  if (!hasSelectedPart) {
+    state.selectedPart = "all";
+  }
+
+  els.partSelect.innerHTML = [
+    `<option value="all">ทุกชิ้นงาน</option>`,
+    ...sortedParts.map((part) => `<option value="${escapeHtml(part.partNumber)}">${escapeHtml(part.partNumber)}</option>`),
+  ].join("");
+  els.partSelect.value = state.selectedPart;
 }
 
 function renderKpis(parts) {

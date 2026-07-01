@@ -746,6 +746,37 @@ tbody tr:last-child td {
   z-index: 5;
 }
 
+.schedule-corner {
+  vertical-align: top;
+}
+
+.schedule-corner span {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.schedule-part-search {
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid #7aa7d9;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 800;
+  outline: none;
+}
+
+.schedule-part-search::placeholder {
+  color: #64748b;
+}
+
+.schedule-part-search:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+}
+
 .schedule-delivered-head,
 .schedule-delivered-cell {
   background: #fff46a;

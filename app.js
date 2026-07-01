@@ -195,7 +195,7 @@ function bindEvents() {
   });
   els.refreshBtn.addEventListener("click", () => loadSheet({ reason: "manual" }));
   els.searchInput.addEventListener("input", (event) => {
-    state.search = event.target.value.trim().toLowerCase();
+    state.search = event.target.value;
     render();
   });
   els.partSelect.addEventListener("change", (event) => {
@@ -229,6 +229,7 @@ function bindEvents() {
     saveTracking();
     render();
   });
+  els.scheduleGrid.addEventListener("input", handleSchedulePartSearchInput);
   els.scheduleGrid.addEventListener("input", handleScheduleInput);
   els.clearScheduleBtn.addEventListener("click", () => {
     if (!confirm("Clear saved daily delivery plan?")) return;
@@ -658,7 +659,7 @@ function refreshComputedViews() {
 }
 
 function applyView(parts) {
-  const query = state.search;
+  const query = state.search.trim().toLowerCase();
   const selectedPart = state.selectedPart;
   let result = parts.filter((part) => {
     if (selectedPart !== "all" && part.partNumber !== selectedPart) return false;
@@ -849,6 +850,7 @@ function renderScheduleGrid(parts) {
   if (!els.scheduleGrid) return;
 
   const dayHeaders = Array.from({ length: 31 }, (_, index) => `<th class="schedule-day-head">${index + 1}</th>`).join("");
+  const scheduleSearchValue = escapeHtml(state.search);
   const rows = parts
     .map((part) => {
       const plan = getSchedulePlan(part.partNumber);
@@ -887,7 +889,11 @@ function renderScheduleGrid(parts) {
       <table class="schedule-table">
         <thead>
           <tr>
-            <th class="schedule-part schedule-corner" rowspan="2">Part Number</th>
+            <th class="schedule-part schedule-corner" rowspan="2">
+              <span>Part Number</span>
+              <input class="schedule-part-search" type="search" value="${scheduleSearchValue}" placeholder="ค้นหางาน"
+                autocomplete="off" aria-label="ค้นหางานตาม Part Number" />
+            </th>
             <th class="schedule-delivered-head" rowspan="2">Delivered</th>
             <th class="schedule-pending-head" rowspan="2">Pending Packing</th>
             <th class="schedule-total-head" rowspan="2">Plan Total</th>
@@ -900,6 +906,26 @@ function renderScheduleGrid(parts) {
       </table>
     </div>
   `;
+}
+
+function handleSchedulePartSearchInput(event) {
+  const input = event.target;
+  if (!input.matches(".schedule-part-search")) return;
+
+  const cursor = input.selectionStart ?? input.value.length;
+  state.search = input.value;
+  if (els.searchInput && els.searchInput.value !== input.value) {
+    els.searchInput.value = input.value;
+  }
+
+  render();
+  window.requestAnimationFrame(() => {
+    const nextInput = els.scheduleGrid.querySelector(".schedule-part-search");
+    if (!nextInput) return;
+    nextInput.focus();
+    const nextCursor = Math.min(cursor, nextInput.value.length);
+    nextInput.setSelectionRange?.(nextCursor, nextCursor);
+  });
 }
 
 function handleScheduleInput(event) {

@@ -7,6 +7,7 @@ const SCHEDULE_KEY = "wip-production-daily-schedule";
 const ACTIVE_VIEW_KEY = "wip-production-active-view";
 const AUTO_REFRESH_MS = 15000;
 const AUTO_REFRESH_SECONDS = Math.round(AUTO_REFRESH_MS / 1000);
+const SYNC_SHEET_GID = "987650321";
 // Paste the deployed Apps Script web app URL here to share schedule edits across all users.
 const REMOTE_SCHEDULE_URL = "";
 
@@ -382,12 +383,16 @@ async function loadSheetLegacy() {
 }
 
 function loadRowsWithJsonp() {
+  return loadRowsFromSheetGidWithJsonp(SHEET_GID, "wipSheetCallback");
+}
+
+function loadRowsFromSheetGidWithJsonp(gid, callbackPrefix) {
   return new Promise((resolve, reject) => {
-    const callbackName = `wipSheetCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const callbackName = `${callbackPrefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const query = encodeURIComponent("select *");
     const tqx = encodeURIComponent(`out:json;responseHandler:${callbackName}`);
     const cacheBust = Date.now();
-    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?gid=${SHEET_GID}&headers=0&tqx=${tqx}&tq=${query}&cacheBust=${cacheBust}`;
+    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?gid=${gid}&headers=0&tqx=${tqx}&tq=${query}&cacheBust=${cacheBust}`;
     const script = document.createElement("script");
     let settled = false;
 
@@ -436,11 +441,13 @@ function hasRemoteScheduleSync() {
 }
 
 async function syncRemoteSchedule() {
-  if (!hasRemoteScheduleSync() || state.isSyncingSchedule) return;
+  if ((!hasRemoteScheduleSync() && !SYNC_SHEET_GID) || state.isSyncingSchedule) return;
   state.isSyncingSchedule = true;
 
   try {
-    const response = await loadRemoteScheduleWithJsonp();
+    const response = hasRemoteScheduleSync()
+      ? await loadRemoteScheduleWithJsonp()
+      : await loadSharedScheduleSheetWithJsonp();
     const remoteSchedule = normalizeRemoteSchedule(response.schedule || {});
     const remoteSignature = buildScheduleSignature(remoteSchedule);
     const localSignature = buildScheduleSignature(state.schedule);
@@ -466,6 +473,33 @@ async function syncRemoteSchedule() {
     state.isSyncingSchedule = false;
     updateAutoRefreshStatus();
   }
+}
+
+async function loadSharedScheduleSheetWithJsonp() {
+  const rows = await loadRowsFromSheetGidWithJsonp(SYNC_SHEET_GID, "wipSharedScheduleCallback");
+  const schedule = {};
+
+  rows.slice(1).forEach((row) => {
+    const partNumber = clean(row[0]);
+    if (!partNumber) return;
+
+    let days = {};
+    try {
+      days = JSON.parse(row[3] || "{}");
+    } catch {
+      days = {};
+    }
+
+    schedule[partNumber] = {
+      delivered: toNumber(row[1]),
+      pendingPacking: toNumber(row[2]),
+      days,
+    };
+  });
+
+  const headerTimestamp = clean(rows[0]?.[6]);
+  const updatedAt = headerTimestamp && headerTimestamp !== "Shared sync timestamp" ? headerTimestamp : "";
+  return { ok: true, updatedAt, schedule };
 }
 
 function loadRemoteScheduleWithJsonp() {
@@ -605,7 +639,9 @@ function updateAutoRefreshStatus() {
   const checkedAt = state.lastCheckedAt
     ? state.lastCheckedAt.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })
     : "-";
-  const scheduleSync = hasRemoteScheduleSync() ? "shared plan sync" : "local plan only";
+  const scheduleSync = hasRemoteScheduleSync()
+    ? "shared plan sync"
+    : "shared sheet read only";
   els.autoRefreshStatus.textContent = `Auto update ${AUTO_REFRESH_SECONDS}s | checked ${checkedAt} | ${scheduleSync}`;
 }
 

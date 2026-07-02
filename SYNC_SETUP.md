@@ -12,13 +12,13 @@ Daily delivery inputs entered inside the web app need a shared Apps Script endpo
 5. Set Execute as: Me.
 6. Set Who has access: Anyone with the link, or Anyone in your organization.
 7. Copy the Web app URL.
-8. In `app.js`, set:
+8. Paste the Web app URL into `web_schedule_sync!G2`.
+
+The app can read the Web app URL from the shared sheet automatically. Editing `app.js` is only needed if you want to hard-code it:
 
 ```js
 const REMOTE_SCHEDULE_URL = "PASTE_WEB_APP_URL_HERE";
 ```
-
-9. Commit and push the change.
 
 After that, all computers using the same GitHub Pages URL will:
 

@@ -155,6 +155,7 @@ const state = {
   lastScheduleSyncAt: null,
   isLoading: false,
   isSyncingSchedule: false,
+  remoteScheduleUrl: "",
   tracking: loadTracking(),
   schedule: initialSchedule,
   scheduleSignature: buildScheduleSignature(initialSchedule),
@@ -437,7 +438,11 @@ function loadRowsFromSheetGidWithJsonp(gid, callbackPrefix) {
 }
 
 function hasRemoteScheduleSync() {
-  return /^https?:\/\//i.test(REMOTE_SCHEDULE_URL.trim());
+  return /^https?:\/\//i.test(getRemoteScheduleUrl());
+}
+
+function getRemoteScheduleUrl() {
+  return (state.remoteScheduleUrl || REMOTE_SCHEDULE_URL || "").trim();
 }
 
 async function syncRemoteSchedule() {
@@ -478,6 +483,10 @@ async function syncRemoteSchedule() {
 async function loadSharedScheduleSheetWithJsonp() {
   const rows = await loadRowsFromSheetGidWithJsonp(SYNC_SHEET_GID, "wipSharedScheduleCallback");
   const schedule = {};
+  const configuredUrl = findConfiguredRemoteScheduleUrl(rows);
+  if (configuredUrl) {
+    state.remoteScheduleUrl = configuredUrl;
+  }
 
   rows.slice(1).forEach((row) => {
     const partNumber = clean(row[0]);
@@ -502,11 +511,24 @@ async function loadSharedScheduleSheetWithJsonp() {
   return { ok: true, updatedAt, schedule };
 }
 
+function findConfiguredRemoteScheduleUrl(rows) {
+  for (const row of rows || []) {
+    for (const cell of row || []) {
+      const text = clean(cell);
+      if (/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/i.test(text)) {
+        return text;
+      }
+    }
+  }
+  return "";
+}
+
 function loadRemoteScheduleWithJsonp() {
   return new Promise((resolve, reject) => {
     const callbackName = `wipScheduleCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    const separator = REMOTE_SCHEDULE_URL.includes("?") ? "&" : "?";
-    const url = `${REMOTE_SCHEDULE_URL}${separator}action=get&callback=${callbackName}&cacheBust=${Date.now()}`;
+    const remoteUrl = getRemoteScheduleUrl();
+    const separator = remoteUrl.includes("?") ? "&" : "?";
+    const url = `${remoteUrl}${separator}action=get&callback=${callbackName}&cacheBust=${Date.now()}`;
     const script = document.createElement("script");
     let settled = false;
 
@@ -572,7 +594,7 @@ async function pushRemoteSchedule() {
   };
 
   try {
-    await fetch(REMOTE_SCHEDULE_URL, {
+    await fetch(getRemoteScheduleUrl(), {
       method: "POST",
       mode: "no-cors",
       body: JSON.stringify(payload),

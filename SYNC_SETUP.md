@@ -26,4 +26,4 @@ After that, all computers using the same GitHub Pages URL will:
 - Read shared daily delivery plans from Apps Script every 15 seconds.
 - Save Delivered, Pending Packing, and day 1-31 edits back to the shared sync sheet.
 
-The Apps Script creates a hidden tab named `web_schedule_sync` in the spreadsheet.
+The Apps Script creates a visible tab named `web_schedule_sync` in the spreadsheet so all users can see the latest shared delivery plan data.

@@ -18,12 +18,17 @@ function doGet(e) {
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents || "{}");
-    if (body.action !== "set") {
-      throw new Error("Unsupported action");
+    if (body.action === "set") {
+      setSchedule_(body.schedule || {});
+      return json_({ ok: true, updatedAt: new Date().toISOString() });
     }
 
-    setSchedule_(body.schedule || {});
-    return json_({ ok: true, updatedAt: new Date().toISOString() });
+    if (body.action === "patch") {
+      patchSchedule_(body.schedule || {});
+      return json_({ ok: true, updatedAt: new Date().toISOString() });
+    }
+
+    throw new Error("Unsupported action");
   } catch (error) {
     return json_({ ok: false, error: String(error.message || error) });
   }
@@ -60,6 +65,35 @@ function getSchedule_() {
 }
 
 function setSchedule_(schedule) {
+  const lock = LockService.getDocumentLock();
+  lock.waitLock(10000);
+  try {
+    writeSchedule_(schedule);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function patchSchedule_(schedulePatch) {
+  const lock = LockService.getDocumentLock();
+  lock.waitLock(10000);
+  try {
+    const current = getSchedule_().schedule || {};
+    Object.keys(schedulePatch).forEach((partNumber) => {
+      const plan = normalizePlan_(schedulePatch[partNumber] || {});
+      if (isEmptyPlan_(plan)) {
+        delete current[partNumber];
+      } else {
+        current[partNumber] = plan;
+      }
+    });
+    writeSchedule_(current);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function writeSchedule_(schedule) {
   const sheet = getSyncSheet_();
   const now = new Date().toISOString();
   const rows = Object.keys(schedule)
@@ -90,7 +124,7 @@ function setSchedule_(schedule) {
     sheet.getRange(2, 1, rows.length, 5).setValues(rows);
   }
 
-  sheet.hideSheet();
+  sheet.showSheet();
 }
 
 function getSyncSheet_() {
@@ -107,8 +141,8 @@ function getSyncSheet_() {
       "",
       "",
     ]]);
-    sheet.hideSheet();
   }
+  sheet.showSheet();
   return sheet;
 }
 
@@ -127,6 +161,10 @@ function normalizePlan_(plan) {
     pendingPacking: Math.max(0, Math.round(Number(plan.pendingPacking) || 0)),
     days,
   };
+}
+
+function isEmptyPlan_(plan) {
+  return !plan.delivered && !plan.pendingPacking && !Object.keys(plan.days || {}).length;
 }
 
 function json_(payload) {

@@ -162,6 +162,8 @@ const state = {
 
 const els = {};
 let remoteScheduleSaveTimer = null;
+let remoteScheduleSaveMode = "patch";
+let pendingRemotePartNumbers = new Set();
 
 document.addEventListener("DOMContentLoaded", () => {
   bindElements();
@@ -242,7 +244,7 @@ function bindEvents() {
   els.clearScheduleBtn.addEventListener("click", () => {
     if (!confirm("Clear saved daily delivery plan?")) return;
     state.schedule = {};
-    saveSchedule();
+    saveSchedule({ mode: "set" });
     render();
   });
   els.exportBtn.addEventListener("click", exportDailyPlan);
@@ -448,7 +450,7 @@ async function syncRemoteSchedule() {
     state.lastScheduleSyncAt = new Date();
 
     if (!response.updatedAt && remoteIsEmpty && localHasData) {
-      queueRemoteScheduleSave();
+      queueRemoteScheduleSave({ mode: "set" });
       return;
     }
 
@@ -505,17 +507,33 @@ function loadRemoteScheduleWithJsonp() {
   });
 }
 
-function queueRemoteScheduleSave() {
+function queueRemoteScheduleSave(options = {}) {
   if (!hasRemoteScheduleSync()) return;
+  if (options.mode === "set") {
+    remoteScheduleSaveMode = "set";
+    pendingRemotePartNumbers.clear();
+  } else if (options.partNumber && remoteScheduleSaveMode !== "set") {
+    pendingRemotePartNumbers.add(options.partNumber);
+  }
   window.clearTimeout(remoteScheduleSaveTimer);
   remoteScheduleSaveTimer = window.setTimeout(pushRemoteSchedule, 600);
 }
 
 async function pushRemoteSchedule() {
   if (!hasRemoteScheduleSync()) return;
+  const mode = remoteScheduleSaveMode;
+  const partNumbers = [...pendingRemotePartNumbers];
+  remoteScheduleSaveMode = "patch";
+  pendingRemotePartNumbers = new Set();
+
   const payload = {
-    action: "set",
-    schedule: normalizeRemoteSchedule(state.schedule),
+    action: mode === "set" || !partNumbers.length ? "set" : "patch",
+    schedule: mode === "set" || !partNumbers.length
+      ? normalizeRemoteSchedule(state.schedule)
+      : partNumbers.reduce((schedule, partNumber) => {
+          schedule[partNumber] = state.schedule[partNumber] || { delivered: 0, pendingPacking: 0, days: {} };
+          return schedule;
+        }, {}),
     updatedAt: new Date().toISOString(),
   };
 
@@ -1101,7 +1119,7 @@ function handleScheduleInput(event) {
   }
 
   state.schedule[partNumber] = pruneSchedulePlan(plan);
-  saveSchedule();
+  saveSchedule({ partNumber });
   updateScheduleRowTotal(partNumber);
   updateScheduleFgBalance(partNumber);
   refreshComputedViews();
@@ -1382,11 +1400,11 @@ function saveScheduleLocal() {
   localStorage.setItem(SCHEDULE_KEY, JSON.stringify(state.schedule));
 }
 
-function saveSchedule() {
+function saveSchedule(options = {}) {
   state.schedule = normalizeRemoteSchedule(state.schedule);
   state.scheduleSignature = buildScheduleSignature(state.schedule);
   saveScheduleLocal();
-  queueRemoteScheduleSave();
+  queueRemoteScheduleSave(options);
 }
 
 function loadActiveView() {
